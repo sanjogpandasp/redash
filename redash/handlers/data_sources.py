@@ -5,7 +5,7 @@ from funcy import project
 from redash import models
 from redash.utils.configuration import ConfigurationContainer, ValidationError
 from redash.permissions import require_admin, require_permission, require_access, view_only
-from redash.query_runner import query_runners, get_configuration_schema_for_type
+from redash.query_runner import query_runners, get_configuration_schema_for_query_runner_type
 from redash.handlers.base import BaseResource, get_object_or_404
 
 
@@ -26,7 +26,7 @@ class DataSourceResource(BaseResource):
         data_source = models.DataSource.get_by_id_and_org(data_source_id, self.current_org)
         req = request.get_json(True)
 
-        schema = get_configuration_schema_for_type(req['type'])
+        schema = get_configuration_schema_for_query_runner_type(req['type'])
         if schema is None:
             abort(400)
 
@@ -35,7 +35,7 @@ class DataSourceResource(BaseResource):
             data_source.options.update(req['options'])
         except ValidationError:
             abort(400)
-
+        
         data_source.type = req['type']
         data_source.name = req['name']
         data_source.save()
@@ -67,7 +67,7 @@ class DataSourceListResource(BaseResource):
             d['view_only'] = all(project(ds.groups, self.current_user.groups).values())
             response[ds.id] = d
 
-        return response.values()
+        return sorted(response.values(), key=lambda d: d['id'])
 
     @require_admin
     def post(self):
@@ -77,7 +77,7 @@ class DataSourceListResource(BaseResource):
             if f not in req:
                 abort(400)
 
-        schema = get_configuration_schema_for_type(req['type'])
+        schema = get_configuration_schema_for_query_runner_type(req['type'])
         if schema is None:
             abort(400)
 
@@ -106,3 +106,38 @@ class DataSourceSchemaResource(BaseResource):
 
         return schema
 
+
+class DataSourcePauseResource(BaseResource):
+    @require_admin
+    def post(self, data_source_id):
+        data_source = get_object_or_404(models.DataSource.get_by_id_and_org, data_source_id, self.current_org)
+        data = request.get_json(force=True, silent=True)
+        if data:
+            reason = data.get('reason')
+        else:
+            reason = request.args.get('reason')
+
+        data_source.pause(reason)
+        data_source.save()
+
+        self.record_event({
+            'action': 'pause',
+            'object_id': data_source.id,
+            'object_type': 'datasource'
+        })
+
+        return data_source.to_dict()
+
+    @require_admin
+    def delete(self, data_source_id):
+        data_source = get_object_or_404(models.DataSource.get_by_id_and_org, data_source_id, self.current_org)
+        data_source.resume()
+        data_source.save()
+
+        self.record_event({
+            'action': 'resume',
+            'object_id': data_source.id,
+            'object_type': 'datasource'
+        })
+
+        return data_source.to_dict()

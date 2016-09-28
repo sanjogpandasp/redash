@@ -64,7 +64,8 @@ class BaseElasticSearch(BaseQueryRunner):
                     'title': 'Basic Auth Password'
                 }
             },
-            "required" : ["server"]
+            "secret": ["basic_auth_password"],
+            "required": ["server"]
         }
 
     @classmethod
@@ -115,7 +116,7 @@ class BaseElasticSearch(BaseQueryRunner):
                         property_type = property_data.get("type", None)
                         if property_type:
                             if property_type in ELASTICSEARCH_TYPES_MAPPING:
-                                mappings[property_name] = property_type
+                                mappings[property_name] = ELASTICSEARCH_TYPES_MAPPING[property_type]
                             else:
                                 mappings[property_name] = TYPE_STRING
                                 #raise Exception("Unknown property type: {0}".format(property_type))

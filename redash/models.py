@@ -16,7 +16,8 @@ from playhouse.postgres_ext import ArrayField, DateTimeTZField
 from permissions import has_access, view_only
 
 from redash import utils, settings, redis_connection
-from redash.query_runner import get_query_runner, get_configuration_schema_for_type
+from redash.query_runner import get_query_runner, get_configuration_schema_for_query_runner_type
+from redash.destinations import get_destination, get_configuration_schema_for_destination_type
 from redash.metrics.database import MeteredPostgresqlExtDatabase, MeteredModel
 from redash.utils import generate_token
 from redash.utils.configuration import ConfigurationContainer
@@ -71,6 +72,8 @@ class JSONField(peewee.TextField):
         return json.dumps(value)
 
     def python_value(self, value):
+        if not value:
+            return value
         return json.loads(value)
 
 
@@ -372,11 +375,13 @@ class DataSource(BelongsToOrgMixin, BaseModel):
             'id': self.id,
             'name': self.name,
             'type': self.type,
-            'syntax': self.query_runner.syntax
+            'syntax': self.query_runner.syntax,
+            'paused': self.paused,
+            'pause_reason': self.pause_reason
         }
 
         if all:
-            schema = get_configuration_schema_for_type(self.type)
+            schema = get_configuration_schema_for_query_runner_type(self.type)
             self.options.set_schema(schema)
             d['options'] = self.options.to_dict(mask_secrets=True)
             d['queue_name'] = self.queue_name
@@ -413,6 +418,23 @@ class DataSource(BelongsToOrgMixin, BaseModel):
             schema = json.loads(cache)
 
         return schema
+
+    def _pause_key(self):
+        return 'ds:{}:pause'.format(self.id)
+
+    @property
+    def paused(self):
+        return redis_connection.exists(self._pause_key())
+
+    @property
+    def pause_reason(self):
+        return redis_connection.get(self._pause_key())
+
+    def pause(self, reason=None):
+        redis_connection.set(self._pause_key(), reason)
+
+    def resume(self):
+        redis_connection.delete(self._pause_key())
 
     def add_group(self, group, view_only=False):
         dsg = DataSourceGroup.create(group=group, data_source=self, view_only=view_only)
@@ -565,11 +587,11 @@ class Query(ModelTimestampsMixin, BaseModel, BelongsToOrgMixin):
     query = peewee.TextField()
     query_hash = peewee.CharField(max_length=32)
     api_key = peewee.CharField(max_length=40)
-    user_email = peewee.CharField(max_length=360, null=True)
     user = peewee.ForeignKeyField(User)
     last_modified_by = peewee.ForeignKeyField(User, null=True, related_name="modified_queries")
     is_archived = peewee.BooleanField(default=False, index=True)
     schedule = peewee.CharField(max_length=10, null=True)
+    options = JSONField(default={})
 
     class Meta:
         db_table = 'queries'
@@ -587,7 +609,8 @@ class Query(ModelTimestampsMixin, BaseModel, BelongsToOrgMixin):
             'is_archived': self.is_archived,
             'updated_at': self.updated_at,
             'created_at': self.created_at,
-            'data_source_id': self.data_source_id
+            'data_source_id': self.data_source_id,
+            'options': self.options
         }
 
         if with_user:
@@ -617,6 +640,9 @@ class Query(ModelTimestampsMixin, BaseModel, BelongsToOrgMixin):
         for vis in self.visualizations:
             for w in vis.widgets:
                 w.delete_instance()
+
+        for alert in self.alerts:
+            alert.delete_instance(recursive=True)
 
         self.save()
 
@@ -755,7 +781,8 @@ class Alert(ModelTimestampsMixin, BaseModel):
             .join(DataSourceGroup, on=(Query.data_source==DataSourceGroup.data_source))\
             .where(DataSourceGroup.group << groups)\
             .switch(Alert)\
-            .join(User)
+            .join(User)\
+            .group_by(Alert, User, Query)
 
     @classmethod
     def get_by_id_and_org(cls, id, org):
@@ -807,35 +834,11 @@ class Alert(ModelTimestampsMixin, BaseModel):
         return self.query.groups
 
 
-class AlertSubscription(ModelTimestampsMixin, BaseModel):
-    user = peewee.ForeignKeyField(User)
-    alert = peewee.ForeignKeyField(Alert)
-
-    class Meta:
-        db_table = 'alert_subscriptions'
-
-    def to_dict(self):
-        return {
-            'user': self.user.to_dict(),
-            'alert_id': self.alert_id
-        }
-
-    @classmethod
-    def all(cls, alert_id):
-        return AlertSubscription.select(AlertSubscription, User).join(User).where(AlertSubscription.alert==alert_id)
-
-    @classmethod
-    def unsubscribe(cls, alert_id, user_id):
-        query = AlertSubscription.delete().where(AlertSubscription.alert==alert_id).where(AlertSubscription.user==user_id)
-        return query.execute()
-
-
 class Dashboard(ModelTimestampsMixin, BaseModel, BelongsToOrgMixin):
     id = peewee.PrimaryKeyField()
     org = peewee.ForeignKeyField(Organization, related_name="dashboards")
     slug = peewee.CharField(max_length=140, index=True)
     name = peewee.CharField(max_length=100)
-    user_email = peewee.CharField(max_length=360, null=True)
     user = peewee.ForeignKeyField(User)
     layout = peewee.TextField()
     dashboard_filters_enabled = peewee.BooleanField(default=False)
@@ -897,7 +900,7 @@ class Dashboard(ModelTimestampsMixin, BaseModel, BelongsToOrgMixin):
         }
 
     @classmethod
-    def all(cls, groups, user_id):
+    def all(cls, org, groups, user_id):
         query = cls.select().\
             join(Widget, peewee.JOIN_LEFT_OUTER, on=(Dashboard.id == Widget.dashboard)). \
             join(Visualization, peewee.JOIN_LEFT_OUTER, on=(Widget.visualization == Visualization.id)). \
@@ -907,15 +910,13 @@ class Dashboard(ModelTimestampsMixin, BaseModel, BelongsToOrgMixin):
             where((DataSourceGroup.group << groups) |
                   (Dashboard.user == user_id) |
                   (~(Widget.dashboard >> None) & (Widget.visualization >> None))). \
+            where(Dashboard.org == org). \
             group_by(Dashboard.id)
+
         return query
 
     @classmethod
-    def get_by_slug_and_org(cls, slug, org):
-        return cls.get(cls.slug == slug, cls.org==org)
-
-    @classmethod
-    def recent(cls, groups, user_id, for_user=False, limit=20):
+    def recent(cls, org, groups, user_id, for_user=False, limit=20):
         query = cls.select().where(Event.created_at > peewee.SQL("current_date - 7")). \
             join(Event, peewee.JOIN_LEFT_OUTER, on=(Dashboard.id == Event.object_id.cast('integer'))). \
             join(Widget, peewee.JOIN_LEFT_OUTER, on=(Dashboard.id == Widget.dashboard)). \
@@ -926,6 +927,7 @@ class Dashboard(ModelTimestampsMixin, BaseModel, BelongsToOrgMixin):
             where(~(Event.object_id >> None)). \
             where(Event.object_type == 'dashboard'). \
             where(Dashboard.is_archived == False). \
+            where(Dashboard.org == org). \
             where((DataSourceGroup.group << groups) |
                   (Dashboard.user == user_id) |
                   (~(Widget.dashboard >> None) & (Widget.visualization >> None))). \
@@ -938,6 +940,10 @@ class Dashboard(ModelTimestampsMixin, BaseModel, BelongsToOrgMixin):
         query = query.limit(limit)
 
         return query
+
+    @classmethod
+    def get_by_slug_and_org(cls, slug, org):
+        return cls.get(cls.slug == slug, cls.org==org)
 
     def save(self, *args, **kwargs):
         if not self.slug:
@@ -1097,7 +1103,100 @@ class ApiKey(ModelTimestampsMixin, BaseModel):
         return cls.create(org=user.org, object=object, created_by=user)
 
 
-all_models = (Organization, Group, DataSource, DataSourceGroup, User, QueryResult, Query, Alert, AlertSubscription, Dashboard, Visualization, Widget, Event, ApiKey)
+class NotificationDestination(BelongsToOrgMixin, BaseModel):
+
+    id = peewee.PrimaryKeyField()
+    org = peewee.ForeignKeyField(Organization, related_name="notification_destinations")
+    user = peewee.ForeignKeyField(User, related_name="notification_destinations")
+    name = peewee.CharField()
+    type = peewee.CharField()
+    options = ConfigurationField()
+    created_at = DateTimeTZField(default=datetime.datetime.now)
+
+    class Meta:
+        db_table = 'notification_destinations'
+
+        indexes = (
+            (('org', 'name'), True),
+        )
+
+    def to_dict(self, all=False):
+        d = {
+            'id': self.id,
+            'name': self.name,
+            'type': self.type,
+            'icon': self.destination.icon()
+        }
+
+        if all:
+            schema = get_configuration_schema_for_destination_type(self.type)
+            self.options.set_schema(schema)
+            d['options'] = self.options.to_dict(mask_secrets=True)
+
+        return d
+
+    def __unicode__(self):
+        return self.name
+
+    @property
+    def destination(self):
+        return get_destination(self.type, self.options)
+
+    @classmethod
+    def all(cls, org):
+        notification_destinations = cls.select().where(cls.org==org).order_by(cls.id.asc())
+
+        return notification_destinations
+
+    def notify(self, alert, query, user, new_state, app, host):
+        schema = get_configuration_schema_for_destination_type(self.type)
+        self.options.set_schema(schema)
+        return self.destination.notify(alert, query, user, new_state,
+                                       app, host, self.options)
+
+
+class AlertSubscription(ModelTimestampsMixin, BaseModel):
+    user = peewee.ForeignKeyField(User)
+    destination = peewee.ForeignKeyField(NotificationDestination, null=True)
+    alert = peewee.ForeignKeyField(Alert, related_name="subscriptions")
+
+    class Meta:
+        db_table = 'alert_subscriptions'
+
+        indexes = (
+            (('destination', 'alert'), True),
+        )
+
+    def to_dict(self):
+        d = {
+            'id': self.id,
+            'user': self.user.to_dict(),
+            'alert_id': self.alert_id
+        }
+
+        if self.destination:
+            d['destination'] = self.destination.to_dict()
+
+        return d
+
+    @classmethod
+    def all(cls, alert_id):
+        return AlertSubscription.select(AlertSubscription, User).join(User).where(AlertSubscription.alert==alert_id)
+
+    def notify(self, alert, query, user, new_state, app, host):
+        if self.destination:
+            return self.destination.notify(alert, query, user, new_state,
+                                           app, host)
+        else:
+            # User email subscription, so create an email destination object
+            config = {'addresses': self.user.email}
+            schema = get_configuration_schema_for_destination_type('email')
+            options = ConfigurationContainer(config, schema)
+            destination = get_destination('email', options)
+            return destination.notify(alert, query, user, new_state, app, host, options)
+
+
+all_models = (Organization, Group, DataSource, DataSourceGroup, User, QueryResult, Query, Alert, Dashboard, Visualization, Widget, Event, NotificationDestination, AlertSubscription, ApiKey)
 
 
 def init_db():

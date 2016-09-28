@@ -26,7 +26,8 @@
     "gulp-print": "^2.0.1",
     "gulp-rev-all": "^0.8.22",
     "bower": "~1.7.1",
-    "gulp-cli": "~1.2.0"
+    "gulp-cli": "~1.2.0",
+    "lodash.map": "^4.4.0"
   },
   "engines": {
     "node": ">=0.10.0"
@@ -34,7 +35,8 @@
   "scripts": {
     "test": "echo 'No tests.'",
     "build": "gulp build",
-    "bower": "bower"
+    "bower": "bower",
+    "heroku-postbuild": "npm install --dev && npm run bower install && npm run build && npm prune --production"
   },
   "dependencies": {
   }

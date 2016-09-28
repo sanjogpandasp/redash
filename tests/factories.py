@@ -52,7 +52,8 @@ org_factory = ModelFactory(redash.models.Organization,
 data_source_factory = ModelFactory(redash.models.DataSource,
                                    name=Sequence('Test {}'),
                                    type='pg',
-                                   options=ConfigurationContainer.from_json('{"dbname": "test"}'),
+                                   # If we don't use lambda here it will reuse the same options between tests:
+                                   options=lambda: ConfigurationContainer.from_json('{"dbname": "test"}'),
                                    org=1)
 
 dashboard_factory = ModelFactory(redash.models.Dashboard,
@@ -65,6 +66,16 @@ query_factory = ModelFactory(redash.models.Query,
                              name='New Query',
                              description='',
                              query='SELECT 1',
+                             user=user_factory.create,
+                             is_archived=False,
+                             schedule=None,
+                             data_source=data_source_factory.create,
+                             org=1)
+
+query_with_params_factory = ModelFactory(redash.models.Query,
+                             name='New Query with Params',
+                             description='',
+                             query='SELECT {{param1}}',
                              user=user_factory.create,
                              is_archived=False,
                              schedule=None,
@@ -99,6 +110,18 @@ widget_factory = ModelFactory(redash.models.Widget,
                               options='{}',
                               dashboard=dashboard_factory.create,
                               visualization=visualization_factory.create)
+
+destination_factory = ModelFactory(redash.models.NotificationDestination,
+                                   org=1,
+                                   user=user_factory.create,
+                                   name='Destination',
+                                   type='slack',
+                                   options=ConfigurationContainer.from_json('{"url": "https://www.slack.com"}'))
+
+alert_subscription_factory = ModelFactory(redash.models.AlertSubscription,
+                                   user=user_factory.create,
+                                   destination=destination_factory.create,
+                                   alert=alert_factory.create)
 
 
 class Factory(object):
@@ -162,6 +185,15 @@ class Factory(object):
         args.update(**kwargs)
         return alert_factory.create(**args)
 
+    def create_alert_subscription(self, **kwargs):
+        args = {
+            'user': self.user,
+            'alert': self.create_alert()
+        }
+
+        args.update(**kwargs)
+        return alert_subscription_factory.create(**args)
+
     def create_data_source(self, **kwargs):
         args = {
             'org': self.org
@@ -199,6 +231,15 @@ class Factory(object):
         args.update(kwargs)
         return query_factory.create(**args)
 
+    def create_query_with_params(self, **kwargs):
+        args = {
+            'user': self.user,
+            'data_source': self.data_source,
+            'org': self.org
+        }
+        args.update(kwargs)
+        return query_with_params_factory.create(**args)
+
     def create_query_result(self, **kwargs):
         args = {
             'data_source': self.data_source,
@@ -218,6 +259,13 @@ class Factory(object):
         args.update(kwargs)
         return visualization_factory.create(**args)
 
+    def create_visualization_with_params(self, **kwargs):
+        args = {
+            'query': self.create_query_with_params()
+        }
+        args.update(kwargs)
+        return visualization_factory.create(**args)
+
     def create_widget(self, **kwargs):
         args = {
             'dashboard': self.create_dashboard(),
@@ -232,3 +280,6 @@ class Factory(object):
         }
         args.update(kwargs)
         return api_key_factory.create(**args)
+
+    def create_destination(self, **kwargs):
+        return destination_factory.create(**kwargs)

@@ -65,6 +65,7 @@ class QueryTaskTracker(object):
             if l != self._get_list():
                 connection.zrem(l, key_name)
 
+    # TOOD: this is not thread/concurrency safe. In current code this is not an issue, but better to fix this.
     def update(self, **kwargs):
         self.data.update(kwargs)
         self.save()
@@ -216,12 +217,6 @@ def enqueue_query(query, data_source, scheduled=False, metadata={}):
                 logging.info("[%s] Found existing job: %s", query_hash, job_id)
 
                 job = QueryTask(job_id=job_id)
-                tracker = QueryTaskTracker.get_by_task_id(job_id, connection=pipe)
-                # tracker might not exist, if it's an old job
-                if scheduled and tracker:
-                    tracker.update(retries=tracker.retries+1)
-                elif tracker:
-                    tracker.update(scheduled_retries=tracker.scheduled_retries+1)
 
                 if job.ready():
                     logging.info("[%s] job found is ready (%s), removing lock", query_hash, job.celery_status)
@@ -264,9 +259,13 @@ def refresh_queries():
 
     with statsd_client.timer('manager.outdated_queries_lookup'):
         for query in models.Query.outdated_queries():
-            enqueue_query(query.query, query.data_source,
-                          scheduled=True,
-                          metadata={'Query ID': query.id, 'Username': 'Scheduled'})
+            if query.data_source.paused:
+                logging.info("Skipping refresh of %s because datasource - %s is paused (%s).", query.id, query.data_source.name, query.data_source.pause_reason)
+            else:
+                enqueue_query(query.query, query.data_source,
+                              scheduled=True,
+                              metadata={'Query ID': query.id, 'Username': 'Scheduled'})
+
             query_ids.append(query.id)
             outdated_queries_count += 1
 
@@ -344,11 +343,14 @@ def refresh_schemas():
     Refreshes the data sources schemas.
     """
     for ds in models.DataSource.select():
-        logger.info("Refreshing schema for: {}".format(ds.name))
-        try:
-            ds.get_schema(refresh=True)
-        except Exception:
-            logger.exception("Failed refreshing schema for the data source: %s", ds.name)
+        if ds.paused:
+            logger.info(u"Skipping refresh schema of %s because it is paused (%s).", ds.name, ds.pause_reason)
+        else:
+            logger.info(u"Refreshing schema for: {}".format(ds.name))
+            try:
+                ds.get_schema(refresh=True)
+            except Exception:
+                logger.exception(u"Failed refreshing schema for the data source: %s", ds.name)
 
 
 def signal_handler(*args):

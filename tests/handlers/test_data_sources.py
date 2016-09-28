@@ -1,4 +1,7 @@
 import json
+
+from funcy import pairwise
+
 from tests import BaseTestCase
 from redash.models import DataSource
 
@@ -24,6 +27,12 @@ class TestDataSourceListGet(BaseTestCase):
         response = self.make_request("get", "/api/data_sources", user=self.factory.user)
 
         self.assertEqual(len(response.json), 1)
+
+    def test_returns_data_sources_ordered_by_id(self):
+        self.factory.create_data_source(group=self.factory.org.default_group)
+        self.factory.create_data_source(group=self.factory.org.default_group)
+        response = self.make_request("get", "/api/data_sources", user=self.factory.user)
+        self.assertTrue(all(left <= right for left, right in pairwise(response.json)))
 
 
 class DataSourceTypesTest(BaseTestCase):
@@ -87,3 +96,39 @@ class TestDataSourceListAPIPost(BaseTestCase):
                                data={'name': 'DS 1', 'type': 'pg', 'options': {"dbname": "redash"}}, user=admin)
 
         self.assertEqual(rv.status_code, 200)
+
+
+class TestDataSourcePausePost(BaseTestCase):
+    def test_pauses_data_source(self):
+        admin = self.factory.create_admin()
+        rv = self.make_request('post', '/api/data_sources/{}/pause'.format(self.factory.data_source.id), user=admin)
+        self.assertEqual(rv.status_code, 200)
+        self.assertEqual(DataSource.get_by_id(self.factory.data_source.id).paused, True)
+
+    def test_pause_sets_reason(self):
+        admin = self.factory.create_admin()
+        rv = self.make_request('post', '/api/data_sources/{}/pause'.format(self.factory.data_source.id), user=admin, data={'reason': 'testing'})
+        self.assertEqual(rv.status_code, 200)
+        self.assertEqual(DataSource.get_by_id(self.factory.data_source.id).paused, True)
+        self.assertEqual(DataSource.get_by_id(self.factory.data_source.id).pause_reason, 'testing')
+
+        rv = self.make_request('post', '/api/data_sources/{}/pause?reason=test'.format(self.factory.data_source.id), user=admin)
+        self.assertEqual(DataSource.get_by_id(self.factory.data_source.id).pause_reason, 'test')
+
+    def test_requires_admin(self):
+        rv = self.make_request('post', '/api/data_sources/{}/pause'.format(self.factory.data_source.id))
+        self.assertEqual(rv.status_code, 403)
+
+
+class TestDataSourcePauseDelete(BaseTestCase):
+    def test_resumes_data_source(self):
+        admin = self.factory.create_admin()
+        self.factory.data_source.pause()
+        self.factory.data_source.save()
+        rv = self.make_request('delete', '/api/data_sources/{}/pause'.format(self.factory.data_source.id), user=admin)
+        self.assertEqual(rv.status_code, 200)
+        self.assertEqual(DataSource.get_by_id(self.factory.data_source.id).paused, False)
+
+    def test_requires_admin(self):
+        rv = self.make_request('delete', '/api/data_sources/{}/pause'.format(self.factory.data_source.id))
+        self.assertEqual(rv.status_code, 403)

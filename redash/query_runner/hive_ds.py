@@ -64,6 +64,10 @@ class Hive(BaseSQLQueryRunner):
     def type(cls):
         return "hive"
 
+    @classmethod
+    def enabled(cls):
+        return enabled
+
     def __init__(self, configuration):
         super(Hive, self).__init__(configuration)
 
@@ -124,7 +128,8 @@ class Hive(BaseSQLQueryRunner):
             logging.exception(e)
             raise sys.exc_info()[1], None, sys.exc_info()[2]
         finally:
-            connection.close()
+            if connection:
+                connection.close()
 
         return json_data, error
 

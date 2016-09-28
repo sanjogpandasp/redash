@@ -55,7 +55,7 @@ def all_settings():
 NAME = os.environ.get('REDASH_NAME', 're:dash')
 LOGO_URL = os.environ.get('REDASH_LOGO_URL', '/images/redash_icon_small.png')
 
-REDIS_URL = os.environ.get('REDASH_REDIS_URL', "redis://localhost:6379/0")
+REDIS_URL = os.environ.get('REDASH_REDIS_URL', os.environ.get('REDIS_URL', "redis://localhost:6379/0"))
 PROXIES_COUNT = int(os.environ.get('REDASH_PROXIES_COUNT', "1"))
 
 STATSD_HOST = os.environ.get('REDASH_STATSD_HOST', "127.0.0.1")
@@ -63,7 +63,7 @@ STATSD_PORT = int(os.environ.get('REDASH_STATSD_PORT', "8125"))
 STATSD_PREFIX = os.environ.get('REDASH_STATSD_PREFIX', "redash")
 
 # Connection settings for re:dash's own database (where we store the queries, results, etc)
-DATABASE_CONFIG = parse_db_url(os.environ.get("REDASH_DATABASE_URL", "postgresql://postgres"))
+DATABASE_CONFIG = parse_db_url(os.environ.get("REDASH_DATABASE_URL", os.environ.get('DATABASE_URL', "postgresql://postgres")))
 
 # Celery related settings
 CELERY_BROKER = os.environ.get("REDASH_CELERY_BROKER", REDIS_URL)
@@ -183,6 +183,19 @@ disabled_query_runners = array_from_string(os.environ.get("REDASH_DISABLED_QUERY
 
 QUERY_RUNNERS = remove(set(disabled_query_runners), distinct(enabled_query_runners + additional_query_runners))
 
+# Destinations
+default_destinations = [
+    'redash.destinations.email',
+    'redash.destinations.slack',
+    'redash.destinations.webhook',
+    'redash.destinations.hipchat',
+]
+
+enabled_destinations = array_from_string(os.environ.get("REDASH_ENABLED_DESTINATIONS", ",".join(default_destinations)))
+additional_destinations = array_from_string(os.environ.get("REDASH_ADDITIONAL_DESTINATIONS", ""))
+
+DESTINATIONS = distinct(enabled_destinations + additional_destinations)
+
 EVENT_REPORTING_WEBHOOKS = array_from_string(os.environ.get("REDASH_EVENT_REPORTING_WEBHOOKS", ""))
 
 # Support for Sentry (http://getsentry.com/). Just set your Sentry DSN to enable it:
@@ -195,13 +208,17 @@ DATE_FORMAT = os.environ.get("REDASH_DATE_FORMAT", "DD/MM/YY")
 # Features:
 FEATURE_ALLOW_ALL_TO_EDIT_QUERIES = parse_boolean(os.environ.get("REDASH_FEATURE_ALLOW_ALL_TO_EDIT", "true"))
 FEATURE_TABLES_PERMISSIONS = parse_boolean(os.environ.get("REDASH_FEATURE_TABLES_PERMISSIONS", "false"))
-VERSION_CHECK = parse_boolean(os.environ.get("REDASH_VERSION_CEHCK", "true"))
+VERSION_CHECK = parse_boolean(os.environ.get("REDASH_VERSION_CHECK", "true"))
 
 # BigQuery
 BIGQUERY_HTTP_TIMEOUT = int(os.environ.get("REDASH_BIGQUERY_HTTP_TIMEOUT", "600"))
 
 # Enhance schema fetching
 SCHEMA_RUN_TABLE_SIZE_CALCULATIONS = parse_boolean(os.environ.get("REDASH_SCHEMA_RUN_TABLE_SIZE_CALCULATIONS", "false"))
+
+# Allow Parameters in Embeds
+# WARNING: With this option enabled, Redash reads query parameters from the request URL (risk of SQL injection!)
+ALLOW_PARAMETERS_IN_EMBEDS = parse_boolean(os.environ.get("REDASH_ALLOW_PARAMETERS_IN_EMBEDS", "false"))
 
 ### Common Client config
 COMMON_CLIENT_CONFIG = {

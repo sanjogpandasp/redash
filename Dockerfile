@@ -6,7 +6,7 @@ RUN apt-get update && \
   # Postgres client
   libpq-dev \
   # Additional packages required for data sources:
-  libssl-dev libmysqlclient-dev freetds-dev && \
+  libssl-dev libmysqlclient-dev freetds-dev libsasl2-dev && \
   apt-get clean && \
   rm -rf /var/lib/apt/lists/*
 
@@ -14,7 +14,7 @@ RUN apt-get update && \
 RUN useradd --system --comment " " --create-home redash
 
 # Pip requirements for all data source types
-RUN pip install -U setuptools && \
+RUN pip install -U setuptools==23.1.0 && \
   pip install supervisor==3.1.2
 
 COPY . /opt/redash/current
@@ -32,7 +32,7 @@ RUN pip install -r requirements_all_ds.txt && \
 RUN curl https://deb.nodesource.com/setup_4.x | bash - && \
   apt-get install -y nodejs && \
   sudo -u redash -H make deps && \
-  rm -rf rd_ui/node_modules /home/redash/.npm /home/redash/.cache && \
+  rm -rf node_modules rd_ui/node_modules /home/redash/.npm /home/redash/.cache && \
   apt-get purge -y nodejs && \
   apt-get clean && \
   rm -rf /var/lib/apt/lists/*

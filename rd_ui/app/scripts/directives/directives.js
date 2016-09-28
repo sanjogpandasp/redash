@@ -92,13 +92,14 @@
       restrict: 'E',
       scope: {
         'tabId': '@',
-        'name': '@'
+        'name': '@',
+        'basePath': '=?'
       },
       transclude: true,
       template: '<li class="rd-tab" ng-class="{active: tabId==selectedTab}"><a href="{{basePath}}#{{tabId}}">{{name}}<span ng-transclude></span></a></li>',
       replace: true,
       link: function (scope) {
-        scope.basePath = $location.path().substring(1);
+        scope.basePath = scope.basePath || $location.path().substring(1);
         scope.$watch(function () {
           return scope.$parent.selectedTab
         }, function (tab) {
@@ -383,7 +384,86 @@
           '</div>' +
         '</div>'
     }
-  })
+  });
+
+  directives.directive('dynamicForm', ['$http', 'growl', '$q', function ($http, growl, $q) {
+    return {
+      restrict: 'E',
+      replace: 'true',
+      transclude: true,
+      templateUrl: '/views/directives/dynamic_form.html',
+      scope: {
+        'target': '=',
+        'type': '@type'
+      },
+      link: function ($scope) {
+        var setType = function(types) {
+          if ($scope.target.type === undefined) {
+            $scope.target.type = types[0].type;
+            return types[0];
+          }
+
+          $scope.type = _.find(types, function (t) {
+            return t.type == $scope.target.type;
+          });
+        };
+
+        $scope.files = {};
+
+        $scope.$watchCollection('files', function() {
+          _.each($scope.files, function(v, k) {
+            if (v) {
+              $scope.target.options[k] = v.base64;
+            }
+          });
+        });
+
+        var typesPromise = $http.get('api/' + $scope.type + '/types');
+
+        $q.all([typesPromise, $scope.target.$promise]).then(function(responses) {
+            var types = responses[0].data;
+            setType(types);
+
+            $scope.types = types;
+
+            _.each(types, function (type) {
+              _.each(type.configuration_schema.properties, function (prop, name) {
+                if (name == 'password' || name == 'passwd') {
+                  prop.type = 'password';
+                }
+
+                if (_.string.endsWith(name, "File")) {
+                  prop.type = 'file';
+                }
+
+                if (prop.type == 'boolean') {
+                  prop.type = 'checkbox';
+                }
+
+                 prop.required = _.contains(type.configuration_schema.required, name);
+              });
+           });
+        });
+
+        $scope.$watch('target.type', function(current, prev) {
+          if (prev !== current) {
+            if (prev !== undefined) {
+              $scope.target.options = {};
+            }
+            setType($scope.types);
+          }
+        });
+
+        $scope.saveChanges = function() {
+          $scope.target.$save(function() {
+            growl.addSuccessMessage("Saved.");
+          }, function() {
+            growl.addErrorMessage("Failed saving.");
+          });
+        }
+      }
+    }
+  }]);
 
   directives.directive('pageHeader', function() {
     return {
@@ -407,10 +487,49 @@
         scope.usersPage = _.string.startsWith($location.path(), '/users');
         scope.groupsPage = _.string.startsWith($location.path(), '/groups');
         scope.dsPage = _.string.startsWith($location.path(), '/data_sources');
+        scope.destinationsPage = _.string.startsWith($location.path(), '/destinations');
 
         scope.showGroupsLink = currentUser.hasPermission('list_users');
         scope.showUsersLink = currentUser.hasPermission('list_users');
         scope.showDsLink = currentUser.hasPermission('admin');
+        scope.showDestinationsLink = currentUser.hasPermission('admin');
+      }
+    }
+  }]);
+
+  directives.directive('parameters', ['$location', '$modal', function($location, $modal) {
+    return {
+      restrict: 'E',
+      transclude: true,
+      scope: {
+        'parameters': '=',
+        'syncValues': '=?',
+        'editable': '=?'
+      },
+      templateUrl: '/views/directives/parameters.html',
+      link: function(scope, elem, attrs) {
+        // is this the correct location for this logic?
+        if (scope.syncValues !== false) {
+          scope.$watch('parameters', function() {
+            _.each(scope.parameters, function(param) {
+              if (param.value !== null || param.value !== '') {
+                $location.search('p_' + param.name, param.value);
+              }
+            })
+          }, true);
+        }
+
+        scope.showParameterSettings = function(param) {
+          $modal.open({
+            templateUrl: '/views/dialogs/parameter_settings.html',
+            controller: ['$scope', '$modalInstance', function($scope, $modalInstance) {
+              $scope.close = function() {
+                $modalInstance.close();
+              };
+              $scope.parameter = param;
+            }]
+          })
+        }
       }
     }
   }]);
