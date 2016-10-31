@@ -97,7 +97,7 @@ def create_app():
     app.url_map.converters['org_slug'] = SlugConverter
 
     if settings.ENFORCE_HTTPS:
-        SSLify(app, skips=['ping'])
+        SSLify(app, skips=['ping'], subdomains=True)
 
     if settings.SENTRY_DSN:
         from raven.contrib.flask import Sentry
