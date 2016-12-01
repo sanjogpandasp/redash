@@ -82,7 +82,7 @@ class MongoDB(BaseQueryRunner):
                     'title': 'Replica Set Name'
                 },
             },
-            'required': ['connectionString']
+            'required': ['connectionString', 'dbName']
         }
 
     @classmethod
@@ -116,6 +116,11 @@ class MongoDB(BaseQueryRunner):
             db_connection = pymongo.MongoClient(self.configuration["connectionString"])
 
         return db_connection[self.db_name]
+
+    def test_connection(self):
+        db = self._get_db()
+        if not db.command("connectionStatus")["ok"]:
+            raise Exception("MongoDB connection error")
 
     def _merge_property_names(self, columns, document):
         for property in document:
@@ -156,7 +161,7 @@ class MongoDB(BaseQueryRunner):
 
         return schema.values()
 
-    def run_query(self, query):
+    def run_query(self, query, user):
         db = self._get_db()
 
         logger.debug("mongodb connection string: %s", self.configuration['connectionString'])

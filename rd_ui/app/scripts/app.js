@@ -14,10 +14,12 @@ angular.module('redash', [
   'ngResource',
   'ngRoute',
   'ui.select',
+  'ui.ace',
   'naif.base64',
   'ui.bootstrap.showErrors',
   'angularResizable',
-  'ngSanitize'
+  'ngSanitize',
+  'vs-repeat'
 ]).config(['$routeProvider', '$locationProvider', '$compileProvider', 'growlProvider', 'uiSelectConfig', '$httpProvider',
   function ($routeProvider, $locationProvider, $compileProvider, growlProvider, uiSelectConfig, $httpProvider) {
     function getQuery(Query, $route) {
@@ -70,6 +72,16 @@ angular.module('redash', [
           return DataSource.query().$promise
         }]
       }
+    });
+    $routeProvider.when('/queries/my', {
+      templateUrl: '/views/queries.html',
+      controller: 'QueriesCtrl',
+      reloadOnSearch: false
+    });
+    $routeProvider.when('/queries/drafts', {
+      templateUrl: '/views/queries.html',
+      controller: 'QueriesCtrl',
+      reloadOnSearch: false
     });
     $routeProvider.when('/queries/search', {
       templateUrl: '/views/queries_search_results.html',
@@ -148,7 +160,15 @@ angular.module('redash', [
     $routeProvider.when('/groups', {
       templateUrl: '/views/groups/list.html',
       controller: 'GroupsCtrl'
-    })
+    });
+    $routeProvider.when('/query_snippets/:snippetId', {
+      templateUrl: '/views/query_snippets/show.html',
+      controller: 'SnippetCtrl'
+    });
+    $routeProvider.when('/query_snippets', {
+      templateUrl: '/views/query_snippets/list.html',
+      controller: 'SnippetsCtrl'
+    });
     $routeProvider.when('/', {
       templateUrl: '/views/index.html',
       controller: 'IndexCtrl'

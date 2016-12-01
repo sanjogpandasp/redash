@@ -13,15 +13,7 @@ from redash.query_runner import import_query_runners
 from redash.destinations import import_destinations
 
 
-__version__ = '0.11.1'
-
-
-if settings.FEATURE_TABLES_PERMISSIONS:
-    # TODO(@arikfr): remove this warning on next version release
-    print "You have table based permissions enabled, but this feature was removed."
-    print "Please use new data sources based permission model."
-    print "(re:dash won't load until you turn off this feature)"
-    exit(1)
+__version__ = '0.12.0'
 
 
 def setup_logging():

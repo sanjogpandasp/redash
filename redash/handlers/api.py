@@ -4,11 +4,12 @@ from flask import make_response
 
 from redash.utils import json_dumps
 from redash.handlers.base import org_scoped_rule
+from redash.handlers.permissions import ObjectPermissionsListResource, CheckPermissionResource
 from redash.handlers.alerts import AlertResource, AlertListResource, AlertSubscriptionListResource, AlertSubscriptionResource
 from redash.handlers.dashboards import DashboardListResource, RecentDashboardsResource, DashboardResource, DashboardShareResource
-from redash.handlers.data_sources import DataSourceTypeListResource, DataSourceListResource, DataSourceSchemaResource, DataSourceResource, DataSourcePauseResource
+from redash.handlers.data_sources import DataSourceTypeListResource, DataSourceListResource, DataSourceSchemaResource, DataSourceResource, DataSourcePauseResource, DataSourceTestResource
 from redash.handlers.events import EventResource
-from redash.handlers.queries import QueryRefreshResource, QueryListResource, QueryRecentResource, QuerySearchResource, QueryResource
+from redash.handlers.queries import QueryRefreshResource, QueryListResource, QueryRecentResource, QuerySearchResource, QueryResource, MyQueriesResource
 from redash.handlers.query_results import QueryResultListResource, QueryResultResource, JobResource
 from redash.handlers.users import UserResource, UserListResource, UserInviteResource, UserResetPasswordResource
 from redash.handlers.visualizations import VisualizationListResource
@@ -17,6 +18,7 @@ from redash.handlers.widgets import WidgetResource, WidgetListResource
 from redash.handlers.groups import GroupListResource, GroupResource, GroupMemberListResource, GroupMemberResource, \
     GroupDataSourceListResource, GroupDataSourceResource
 from redash.handlers.destinations import DestinationTypeListResource, DestinationResource, DestinationListResource
+from redash.handlers.query_snippets import QuerySnippetListResource, QuerySnippetResource
 
 
 class ApiExt(Api):
@@ -51,6 +53,7 @@ api.add_org_resource(DataSourceTypeListResource, '/api/data_sources/types', endp
 api.add_org_resource(DataSourceListResource, '/api/data_sources', endpoint='data_sources')
 api.add_org_resource(DataSourceSchemaResource, '/api/data_sources/<data_source_id>/schema')
 api.add_org_resource(DataSourcePauseResource, '/api/data_sources/<data_source_id>/pause')
+api.add_org_resource(DataSourceTestResource, '/api/data_sources/<data_source_id>/test')
 api.add_org_resource(DataSourceResource, '/api/data_sources/<data_source_id>', endpoint='data_source')
 
 api.add_org_resource(GroupListResource, '/api/groups', endpoint='groups')
@@ -65,8 +68,12 @@ api.add_org_resource(EventResource, '/api/events', endpoint='events')
 api.add_org_resource(QuerySearchResource, '/api/queries/search', endpoint='queries_search')
 api.add_org_resource(QueryRecentResource, '/api/queries/recent', endpoint='recent_queries')
 api.add_org_resource(QueryListResource, '/api/queries', endpoint='queries')
+api.add_org_resource(MyQueriesResource, '/api/queries/my', endpoint='my_queries')
 api.add_org_resource(QueryRefreshResource, '/api/queries/<query_id>/refresh', endpoint='query_refresh')
 api.add_org_resource(QueryResource, '/api/queries/<query_id>', endpoint='query')
+
+api.add_org_resource(ObjectPermissionsListResource, '/api/<object_type>/<object_id>/acl', endpoint='object_permissions')
+api.add_org_resource(CheckPermissionResource, '/api/<object_type>/<object_id>/acl/<access_type>', endpoint='check_permissions')
 
 api.add_org_resource(QueryResultListResource, '/api/query_results', endpoint='query_results')
 api.add_org_resource(QueryResultResource,
@@ -90,3 +97,6 @@ api.add_org_resource(WidgetResource, '/api/widgets/<int:widget_id>', endpoint='w
 api.add_org_resource(DestinationTypeListResource, '/api/destinations/types', endpoint='destination_types')
 api.add_org_resource(DestinationResource, '/api/destinations/<destination_id>', endpoint='destination')
 api.add_org_resource(DestinationListResource, '/api/destinations', endpoint='destinations')
+
+api.add_org_resource(QuerySnippetResource, '/api/query_snippets/<snippet_id>', endpoint='query_snippet')
+api.add_org_resource(QuerySnippetListResource, '/api/query_snippets', endpoint='query_snippets')

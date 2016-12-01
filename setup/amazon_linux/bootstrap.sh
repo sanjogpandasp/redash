@@ -7,7 +7,7 @@ REDASH_BASE_PATH=/opt/redash
 REDASH_BRANCH="${REDASH_BRANCH:-master}"
 
 # Install latest version if not specified in REDASH_VERSION env var
-REDASH_VERSION=${REDASH_VERSION-0.10.1.b1834}
+REDASH_VERSION=${REDASH_VERSION-0.11.1.b2095}
 LATEST_URL="https://github.com/getredash/redash/releases/download/v${REDASH_VERSION}/redash.${REDASH_VERSION}.tar.gz"
 VERSION_DIR="/opt/redash/redash.${REDASH_VERSION}"
 REDASH_TARBALL=/tmp/redash.tar.gz
@@ -139,7 +139,7 @@ pip install MySQL-python==1.2.5
 
 # Microsoft SQL Server dependencies (`sudo` required):
 sudo yum install -y freetds-devel
-sudo pip install pymssql==2.1.1
+sudo pip install pymssql==2.1.2
 
 # Mongo dependencies:
 pip install pymongo==2.7.2

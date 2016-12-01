@@ -79,6 +79,8 @@ def _get_query_results(jobs, project_id, job_id, start_index):
 
 
 class BigQuery(BaseQueryRunner):
+    noop_query = "SELECT 1"
+
     @classmethod
     def enabled(cls):
         return enabled
@@ -99,11 +101,27 @@ class BigQuery(BaseQueryRunner):
                 'totalMBytesProcessedLimit': {
                     "type": "number",
                     'title': 'Total MByte Processed Limit'
+                },
+                'userDefinedFunctionResourceUri': {
+                    "type": "string",
+                    'title': 'UDF Source URIs (i.e. gs://bucket/date_utils.js, gs://bucket/string_utils.js )'
+                },
+                'useStandardSql': {
+                    "type": "boolean",
+                    'title': "Use Standard SQL (Beta)",
+                },
+                'loadSchema': {
+                    "type": "boolean",
+                    "title": "Load Schema"
                 }
             },
             'required': ['jsonKeyFile', 'projectId'],
             'secret': ['jsonKeyFile']
         }
+
+    @classmethod
+    def annotate_query(cls):
+        return False
 
     def __init__(self, configuration):
         super(BigQuery, self).__init__(configuration)
@@ -111,7 +129,8 @@ class BigQuery(BaseQueryRunner):
     def _get_bigquery_service(self):
         scope = [
             "https://www.googleapis.com/auth/bigquery",
-            ]
+            "https://www.googleapis.com/auth/drive"
+        ]
 
         key = json.loads(b64decode(self.configuration['jsonKeyFile']))
 
@@ -128,6 +147,7 @@ class BigQuery(BaseQueryRunner):
         job_data = {
             "query": query,
             "dryRun": True,
+            "useLegacySql": not self.configuration.get('useStandardSql', False),
         }
         response = jobs.query(projectId=self._get_project_id(), body=job_data).execute()
         return int(response["totalBytesProcessed"])
@@ -138,9 +158,15 @@ class BigQuery(BaseQueryRunner):
             "configuration": {
                 "query": {
                     "query": query,
+                    "useLegacySql": not self.configuration.get('useStandardSql', False),
                 }
             }
         }
+
+        if "userDefinedFunctionResourceUri" in self.configuration:
+            resource_uris = self.configuration["userDefinedFunctionResourceUri"].split(',')
+            job_data["configuration"]["query"]["userDefinedFunctionResources"] = map(
+                lambda resource_uri: {"resourceUri": resource_uri}, resource_uris)
 
         insert_response = jobs.insert(projectId=project_id, body=job_data).execute()
         current_row = 0
@@ -170,7 +196,26 @@ class BigQuery(BaseQueryRunner):
 
         return data
 
-    def run_query(self, query):
+    def get_schema(self, get_stats=False):
+        if not self.configuration.get('loadSchema', False):
+            return []
+
+        service = self._get_bigquery_service()
+        project_id = self._get_project_id()
+        datasets = service.datasets().list(projectId=project_id).execute()
+        schema = []
+        for dataset in datasets.get('datasets', []):
+            dataset_id = dataset['datasetReference']['datasetId']
+            tables = service.tables().list(projectId=project_id, datasetId=dataset_id).execute()
+            for table in tables.get('tables', []):
+                table_data = service.tables().get(projectId=project_id, datasetId=dataset_id, tableId=table['tableReference']['tableId']).execute()
+                print table_data
+
+                schema.append({'name': table_data['id'], 'columns': map(lambda r: r['name'], table_data['schema']['fields'])})
+
+        return schema
+
+    def run_query(self, query, user):
         logger.debug("BigQuery got query: %s", query)
 
         bigquery_service = self._get_bigquery_service()
@@ -206,6 +251,16 @@ class BigQueryGCE(BigQuery):
     @classmethod
     def type(cls):
         return "bigquery_gce"
+
+    @classmethod
+    def enabled(cls):
+        try:
+            # check if we're on a GCE instance
+            requests.get('http://metadata.google.internal')
+        except requests.exceptions.ConnectionError:
+            return False
+
+        return True
 
     @classmethod
     def configuration_schema(cls):

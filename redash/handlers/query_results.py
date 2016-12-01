@@ -45,7 +45,7 @@ def run_query(data_source, parameter_values, query_text, query_id, max_age=0):
     if query_result:
         return {'query_result': query_result.to_dict()}
     else:
-        job = enqueue_query(query_text, data_source, metadata={"Username": current_user.name, "Query ID": query_id})
+        job = enqueue_query(query_text, data_source, current_user.id, metadata={"Username": current_user.email, "Query ID": query_id})
         return {'job': job.to_dict()}
 
 
@@ -84,7 +84,7 @@ class QueryResultResource(BaseResource):
         if 'Origin' in request.headers:
             origin = request.headers['Origin']
 
-            if origin in settings.ACCESS_CONTROL_ALLOW_ORIGIN:
+            if set(['*', origin]) & settings.ACCESS_CONTROL_ALLOW_ORIGIN:
                 headers['Access-Control-Allow-Origin'] = origin
                 headers['Access-Control-Allow-Credentials'] = str(settings.ACCESS_CONTROL_ALLOW_CREDENTIALS).lower()
 
@@ -162,7 +162,8 @@ class QueryResultResource(BaseResource):
 
     def make_json_response(self, query_result):
         data = json.dumps({'query_result': query_result.to_dict()}, cls=utils.JSONEncoder)
-        return make_response(data, 200, {})
+        headers = {'Content-Type': "application/json"}
+        return make_response(data, 200, headers)
 
     @staticmethod
     def make_csv_response(query_result):
@@ -193,7 +194,7 @@ class QueryResultResource(BaseResource):
 
         for (r, row) in enumerate(query_data['rows']):
             for (c, name) in enumerate(column_names):
-                sheet.write(r + 1, c, row[name])
+                sheet.write(r + 1, c, row.get(name))
 
         book.close()
 

@@ -31,6 +31,8 @@ PRESTO_TYPES_MAPPING = {
 
 
 class Presto(BaseQueryRunner):
+    noop_query = 'SHOW TABLES'
+
     @classmethod
     def configuration_schema(cls):
         return {
@@ -60,17 +62,41 @@ class Presto(BaseQueryRunner):
         return enabled
 
     @classmethod
-    def annotate_query(cls):
-        return False
-
-    @classmethod
     def type(cls):
         return "presto"
 
     def __init__(self, configuration):
         super(Presto, self).__init__(configuration)
 
-    def run_query(self, query):
+    def get_schema(self, get_stats=False):
+        schema = {}
+        query = """
+        SELECT table_schema, table_name, column_name
+        FROM information_schema.columns
+        WHERE table_schema NOT IN ('pg_catalog', 'information_schema')
+        """
+
+        results, error = self.run_query(query, None)
+
+        if error is not None:
+            raise Exception("Failed getting schema.")
+
+        results = json.loads(results)
+
+        for row in results['rows']:
+            if row['table_schema'] != 'public':
+                table_name = '{}.{}'.format(row['table_schema'], row['table_name'])
+            else:
+                table_name = row['table_name']
+
+            if table_name not in schema:
+                schema[table_name] = {'name': table_name, 'columns': []}
+
+            schema[table_name]['columns'].append(row['column_name'])
+
+        return schema.values()
+
+    def run_query(self, query, user):
         connection = presto.connect(
                 host=self.configuration.get('host', ''),
                 port=self.configuration.get('port', 8080),
