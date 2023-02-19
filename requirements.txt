@@ -39,4 +39,5 @@ semver==2.2.1
 xlsxwriter==0.9.3
 pystache==0.5.4
 parsedatetime==2.1
-cryptography==1.4
+cryptography==39.0.1
+setuptools>=65.5.1 # not directly required, pinned by Snyk to avoid a vulnerability
