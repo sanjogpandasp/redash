@@ -25,7 +25,7 @@ wsgiref==0.1.2
 Flask-Script==0.6.6
 honcho==0.5.0
 statsd==2.1.2
-gunicorn==19.4.5
+gunicorn==23.0.0
 celery==3.1.23
 jsonschema==2.4.0
 click==3.3
